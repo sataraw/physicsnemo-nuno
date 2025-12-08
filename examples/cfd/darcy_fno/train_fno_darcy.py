@@ -78,7 +78,7 @@ def darcy_trainer(cfg: DictConfig) -> None:
         batch_size=cfg.training.batch_size,
         normaliser=normaliser,
     )
-    validator = GridValidator(loss_fun=MSELoss(reduction="mean"))
+    validator = GridValidator(loss_fun=MSELoss(reduction="mean"), norm=normaliser)
 
     ckpt_args = {
         "path": f"./checkpoints",

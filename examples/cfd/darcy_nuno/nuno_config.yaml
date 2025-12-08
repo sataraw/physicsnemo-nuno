@@ -1,0 +1,101 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ============================================================================
+# NUNO Configuration for Darcy Flow Training
+# ============================================================================
+# This configuration is designed for quick testing. For full training,
+# increase max_pseudo_epochs, pseudo_epoch_sample_size, and reduce
+# validation_pseudo_epochs.
+
+# ----------------------------------------------------------------------------
+# Data Configuration
+# ----------------------------------------------------------------------------
+data:
+  data_dir: "data/nuno_darcy"    # Directory containing HDF5 shards
+  num_workers: 0                  # DataLoader workers (0 for Windows compatibility)
+
+# ----------------------------------------------------------------------------
+# Model Architecture
+# ----------------------------------------------------------------------------
+arch:
+  # Decoder (output MLP) configuration
+  decoder:
+    out_features: 1               # Output channels (pressure field)
+    layers: 1                     # Number of decoder layers
+    layer_size: 32                # Hidden layer size
+
+  # NUNO-specific configuration
+  nuno:
+    in_channels: 1                # Input channels (permeability field)
+    dimension: 2                  # Spatial dimension (2D)
+    
+    # Domain decomposition parameters
+    n_subdomains: 8               # Number of K-D tree subdomains
+    n_blocks: 8                   # Blocks for KL divergence calculation
+    smallest_points: 8            # Minimum points per subdomain
+    oversamp_ratio: 1.5           # Grid oversampling ratio
+    
+    # FNO backbone parameters
+    latent_channels: 32           # Hidden channels in FNO
+    fno_layers: 4                 # Number of spectral convolution layers
+    fno_modes: 12                 # Fourier modes to keep
+    padding: 8                    # Padding for FFT
+    
+    # Additional features
+    coord_features: true          # Add coordinate features to input
+
+# ----------------------------------------------------------------------------
+# Normalization Parameters
+# ----------------------------------------------------------------------------
+# These values are based on the Darcy flow data statistics
+normalizer:
+  permeability:
+    mean: 1.25
+    std_dev: 0.75
+  darcy:
+    mean: 4.52e-2
+    std_dev: 2.79e-2
+
+# ----------------------------------------------------------------------------
+# Learning Rate Schedule
+# ----------------------------------------------------------------------------
+scheduler:
+  initial_lr: 1.0e-3              # Initial learning rate
+  decay_rate: 0.85                # LR decay multiplier
+  decay_pseudo_epochs: 4          # Decay LR every N pseudo-epochs
+
+# ----------------------------------------------------------------------------
+# Training Configuration
+# ----------------------------------------------------------------------------
+# NOTE: These values are set for quick testing (5-10 minutes).
+# For full training, use:
+#   max_pseudo_epochs: 100
+#   pseudo_epoch_sample_size: 4096
+#   batch_size: 32
+training:
+  batch_size: 32                  # Batch size (reduce if OOM)
+  max_pseudo_epochs: 8            # Total training pseudo-epochs
+  pseudo_epoch_sample_size: 512   # Samples per pseudo-epoch
+  rec_results_freq: 32             # Save checkpoint every N epochs
+
+# ----------------------------------------------------------------------------
+# Validation Configuration
+# ----------------------------------------------------------------------------
+validation:
+  sample_size: 64                 # Validation samples
+  validation_pseudo_epochs: 4     # Validate every N epochs
+  use_triangulation: true         # Use triangulation for smooth heatmaps
