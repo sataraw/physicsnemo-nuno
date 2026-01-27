@@ -44,6 +44,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from typing import Optional, Tuple
 
 # Import the existing Darcy generator from PhysicsNeMo
@@ -283,12 +284,12 @@ def visualize_sample(shard_path: str, sample_idx: int = 0) -> None:
 
 
 def generate_data(
-    output_root: str = "data/nuno_darcy",
+    output_root: str = "data",
     total_train_samples: int = 10000,
     total_val_samples: int = 1000,
     samples_per_shard: int = 2000,
     num_points: int = 1024,
-    resolution: int = 256,
+    resolution: int = 512,
     batch_size: int = 32,
     seed: int = 42
 ) -> None:
@@ -367,60 +368,58 @@ def _generate_split(
     samples_per_shard: int,
     num_points: int
 ) -> None:
-    """Generate data for a single split (train/val/test)."""
+    """Generate data for a single split with a real-time progress bar."""
     shard_idx = 0
     samples_in_shard = 0
     total_written = 0
     
     current_h5 = create_shard(output_root, split, shard_idx, num_points, fixed_coords)
-    
     uniform_iter = iter(uniform_loader)
+    
+    # Initialize the progress bar
+    pbar = tqdm(total=total_samples, desc=f"  {split.capitalize()}", unit="samples")
     
     try:
         while total_written < total_samples:
-            # Get uniform batch
             batch = next(uniform_iter)
-            
-            # Sample at fixed coordinates
             sampled_data = sampler.sample_batch(batch)
             batch_len = sampled_data['permeability'].shape[0]
             
-            # Don't exceed total samples
             if total_written + batch_len > total_samples:
                 remaining = total_samples - total_written
                 sampled_data['permeability'] = sampled_data['permeability'][:remaining]
                 sampled_data['pressure'] = sampled_data['pressure'][:remaining]
                 batch_len = remaining
             
-            # Sharding logic
             if samples_in_shard + batch_len > samples_per_shard:
                 current_h5.close()
                 shard_idx += 1
                 samples_in_shard = 0
                 current_h5 = create_shard(output_root, split, shard_idx, num_points, fixed_coords)
-                print(f"  Opened shard {shard_idx}")
+                # Use tqdm.write to prevent the message from breaking the progress bar
+                tqdm.write(f"  [Info] Opened shard {shard_idx}")
             
-            # Write to disk
             append_to_shard(current_h5, sampled_data)
             
             samples_in_shard += batch_len
             total_written += batch_len
             
-            if total_written % 500 == 0 or total_written == total_samples:
-                print(f"  Progress: {total_written}/{total_samples} samples")
+            # Update the bar by the number of samples processed in this batch
+            pbar.update(batch_len)
                 
     finally:
+        pbar.close()
         current_h5.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate NUNO Darcy Flow Data")
     parser.add_argument("--output", type=str, default="data/nuno_darcy", help="Output directory")
-    parser.add_argument("--train-samples", type=int, default=1000, help="Training samples")
-    parser.add_argument("--val-samples", type=int, default=100, help="Validation samples")
+    parser.add_argument("--train-samples", type=int, default=5000, help="Training samples")
+    parser.add_argument("--val-samples", type=int, default=500, help="Validation samples")
     parser.add_argument("--samples-per-shard", type=int, default=2000, help="Samples per HDF5 file")
     parser.add_argument("--num-points", type=int, default=1024, help="Non-uniform points")
-    parser.add_argument("--resolution", type=int, default=256, help="Source grid resolution")
+    parser.add_argument("--resolution", type=int, default=512, help="Source grid resolution")
     parser.add_argument("--batch-size", type=int, default=32, help="Generation batch size")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for coordinates")
     parser.add_argument("--visualize", type=str, default=None, help="Path to shard to visualize")
