@@ -338,7 +338,13 @@ def main():
     # -- 1. Fixed point-cloud coordinates --
     torch.manual_seed(SEED)
     # grid_sample expects coords in [-1, 1]
-    coords_gs = torch.rand(1, 1, NUM_POINTS, 2, device=device) * 2 - 1
+    #coords_gs = torch.rand(1, 1, NUM_POINTS, 2, device=device) * 2 - 1
+
+    from point_sampler import LocallyDenseSampler
+
+    sampler = LocallyDenseSampler(num_points=NUM_POINTS, device=device)
+
+    coords_gs = sampler._generate_coordinates().unsqueeze(0).unsqueeze(0)
 
     # prep2D expects coords in [0, 1]  (NUNO convention)
     coords_np = (coords_gs.squeeze().cpu().numpy() + 1.0) / 2.0  # (N, 2)
