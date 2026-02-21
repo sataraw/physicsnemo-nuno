@@ -12,7 +12,10 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import copy
+import argparse
+import os
 import matplotlib
+
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -28,7 +31,7 @@ NUM_POINTS = 3809  # points in the fixed point cloud
 NUM_SAMPLES = 200
 BATCH_SIZE = 20  # for both Darcy generator & training
 DARCY_RESOLUTION = 512  # resolution of the Darcy generator grid
-N_SUBDOMAINS = 8  # NUNO subdomain count
+N_SUBDOMAINS = 12  # NUNO subdomain count
 MAX_EPOCHS = 100
 LR = 1e-3
 VAL_SPLIT = 0.1
@@ -132,6 +135,53 @@ def generate_darcy_pointcloud(
     print(f"  pressure      range: [{press.min():.4f}, {press.max():.4f}]  (pre-normalised)")
     return perm, press
 
+
+def load_darcy_pointcloud_from_hdf5(
+    data_dir: str,
+    coords_gs: torch.Tensor,
+    num_samples: int,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Load pre-generated Darcy HDF5 shards and sample onto the fixed point cloud.
+
+    Data in shards is already normalized (stored as float32, shape (N, H, W, 1)).
+    """
+    import glob, h5py
+
+    shards = sorted(glob.glob(os.path.join(data_dir, "*.h5")))
+    if not shards:
+        raise FileNotFoundError(f"No .h5 files found in {data_dir}")
+
+    perm_chunks, press_chunks = [], []
+    count = 0
+
+    for shard_path in shards:
+        with h5py.File(shard_path, "r") as f:
+            k_arr = f["permeability"][:]   # (N, H, W, 1)
+            p_arr = f["pressure"][:]
+
+        for i in range(k_arr.shape[0]):
+            k_grid = torch.from_numpy(k_arr[i]).permute(2, 0, 1).unsqueeze(0).to(device)  # (1, 1, H, W)
+            p_grid = torch.from_numpy(p_arr[i]).permute(2, 0, 1).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                k_pts = F.grid_sample(k_grid, coords_gs[:1], align_corners=False, mode="bilinear")
+                p_pts = F.grid_sample(p_grid, coords_gs[:1], align_corners=False, mode="bilinear")
+
+            perm_chunks.append(k_pts.squeeze(2).permute(0, 2, 1))   # (1, N, 1)
+            press_chunks.append(p_pts.squeeze(2).permute(0, 2, 1))
+            count += 1
+            if count >= num_samples:
+                break
+
+        if count >= num_samples:
+            break
+
+    perm  = torch.cat(perm_chunks,  dim=0)[:num_samples]  # (S, N, 1)
+    press = torch.cat(press_chunks, dim=0)[:num_samples]
+    print(f"  Loaded {perm.shape[0]} samples from {data_dir}")
+    return perm, press
 
 
 
@@ -335,6 +385,11 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}\n")
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=str, default=None,
+                        help="Path to pre-generated HDF5 train split (e.g. data/darcy_master_normalized/train)")
+    args = parser.parse_args()
+
     # -- 1. Fixed point-cloud coordinates --
     torch.manual_seed(SEED)
     # grid_sample expects coords in [-1, 1]
@@ -350,10 +405,16 @@ def main():
     coords_np = (coords_gs.squeeze().cpu().numpy() + 1.0) / 2.0  # (N, 2)
 
     # -- 2. Generate Darcy data as point clouds --
-    print("Generating Darcy flow point-cloud data ...")
-    perm, press = generate_darcy_pointcloud(
-        coords_gs, NUM_SAMPLES, BATCH_SIZE, DARCY_RESOLUTION, device
-    )
+    if args.data_dir:
+        print(f"Loading Darcy point-cloud data from {args.data_dir} ...")
+        perm, press = load_darcy_pointcloud_from_hdf5(
+            args.data_dir, coords_gs, NUM_SAMPLES, device
+        )
+    else:
+        print("Generating Darcy flow point-cloud data ...")
+        perm, press = generate_darcy_pointcloud(
+            coords_gs, NUM_SAMPLES, BATCH_SIZE, DARCY_RESOLUTION, device
+        )
     # perm:  (S, N, 1) — permeability (input,  pre-normalised)
     # press: (S, N, 1) — pressure     (target, pre-normalised)
 
