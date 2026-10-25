@@ -78,11 +78,15 @@ class DarcyMasterGridGenerator:
                 # Fetch batch from simulator (already normalized)
                 # batch keys: 'permeability', 'darcy' (pressure)
                 # shapes: (B, 1, H, W)
+                #
+                # IMPORTANT: Darcy2D generates ONE unique random field per
+                # iteration, replicated across the batch dimension.
+                # We take only the first sample to avoid storing duplicates.
                 batch = next(sim_iter)
                 
-                # Move to CPU numpy
-                k_batch = batch['permeability'].cpu().numpy()
-                p_batch = batch['darcy'].cpu().numpy()
+                # Move to CPU numpy — take only first (unique) sample
+                k_batch = batch['permeability'][0:1].cpu().numpy()
+                p_batch = batch['darcy'][0:1].cpu().numpy()
                 
                 # Permute to HDF5 friendly format: (B, H, W, C)
                 # (B, 1, H, W) -> (B, H, W, 1)
@@ -169,8 +173,8 @@ class DarcyMasterGridGenerator:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Uniform Darcy Master Dataset")
     parser.add_argument("--output", type=str, default="data/darcy_master_normalized", help="Output path for HDF5 shards")
-    parser.add_argument("--resolution", type=int, default=4096, help="Grid resolution of the simulation")
-    parser.add_argument("--train-samples", type=int, default=500, help="Number of training samples to generate")
+    parser.add_argument("--resolution", type=int, default=512, help="Grid resolution of the simulation")
+    parser.add_argument("--train-samples", type=int, default=1000, help="Number of training samples to generate")
     parser.add_argument("--val-samples", type=int, default=50, help="Number of validation samples to generate")
     parser.add_argument("--shard-size", type=int, default=50, help="Number of samples per HDF5 file")
     parser.add_argument("--batch-size", type=int, default=32, help="Internal batch size for the generator")

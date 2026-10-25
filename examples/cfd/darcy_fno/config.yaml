@@ -42,12 +42,12 @@ scheduler:
   decay_pseudo_epochs: 8
 
 training:
-  resolution: 256
-  batch_size: 64
+  resolution: 512
+  batch_size: 32
   rec_results_freq : 8
-  max_pseudo_epochs: 256
-  pseudo_epoch_sample_size: 2048
+  max_pseudo_epochs: 32
+  pseudo_epoch_sample_size: 32
 
 validation:
   sample_size: 256
-  validation_pseudo_epochs: 4
+  validation_pseudo_epochs: 1

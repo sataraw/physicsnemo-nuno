@@ -28,11 +28,11 @@ from point_sampler import get_sampler
 
 # ──────────────────── hyperparameters ────────────────────
 NUM_POINTS = 3809  # points in the fixed point cloud
-NUM_SAMPLES = 200
+NUM_SAMPLES = 1000
 BATCH_SIZE = 20  # for both Darcy generator & training
 DARCY_RESOLUTION = 512  # resolution of the Darcy generator grid
 N_SUBDOMAINS = 12  # NUNO subdomain count
-MAX_EPOCHS = 100
+MAX_EPOCHS = 50
 LR = 1e-3
 VAL_SPLIT = 0.1
 VAL_EVERY = 10  # validate & visualise every N epochs
@@ -393,11 +393,11 @@ def main():
     # -- 1. Fixed point-cloud coordinates --
     torch.manual_seed(SEED)
     # grid_sample expects coords in [-1, 1]
-    #coords_gs = torch.rand(1, 1, NUM_POINTS, 2, device=device) * 2 - 1
+    # coords_gs = torch.rand(1, 1, NUM_POINTS, 2, device=device) * 2 - 1
 
-    from point_sampler import LocallyDenseSampler
+    from point_sampler import LocallyDenseSampler, RandomSampler
 
-    sampler = LocallyDenseSampler(num_points=NUM_POINTS, device=device)
+    sampler = RandomSampler(num_points=NUM_POINTS, device=device)
 
     coords_gs = sampler._generate_coordinates().unsqueeze(0).unsqueeze(0)
 
@@ -678,6 +678,48 @@ def main():
         save_path="darcy_spatial_final.png",
     )
     print("\nDone.")
+
+
+    # -- 8b. Reconstruction MSE on original point cloud --
+    # This metric is comparable across different subdomain counts because
+    # it always evaluates on the same N original points.
+    N = coords_np.shape[0]
+    n_sd = model.n_subdomains
+    indices_sd = model.indices_sd
+
+    def reconstruct_to_original_points(tensor):
+        """Map (B, max_pts_sd, 1, n_sd) -> (B, N) on original coordinates."""
+        v = tensor.cpu().float().numpy()
+        B = v.shape[0]
+        field = np.zeros((B, N))
+        for sd in range(n_sd):
+            idx = indices_sd[sd]
+            n_pts = len(idx)
+            if v.ndim == 4:
+                field[:, idx] = v[:, :n_pts, 0, sd]
+            elif v.ndim == 3:
+                field[:, idx] = v[:, :n_pts, sd]
+        return field
+
+    # Evaluate on ALL samples (not just a few)
+    print(f"\n  === Reconstruction MSE (on original {N} points) ===")
+    recon_mse_list = []
+    with torch.no_grad():
+        for i in range(0, len(train_a), BATCH_SIZE):
+            batch_a = train_a[i:i+BATCH_SIZE]
+            batch_u = train_u[i:i+BATCH_SIZE]
+            batch_pred = model(batch_a)
+            pred_recon = reconstruct_to_original_points(batch_pred)
+            true_recon = reconstruct_to_original_points(batch_u)
+            batch_mse = np.mean((pred_recon - true_recon) ** 2)
+            recon_mse_list.append(batch_mse)
+    recon_mse = np.mean(recon_mse_list)
+    recon_rmse = np.sqrt(recon_mse)
+    print(f"    Reconstruction MSE:  {recon_mse:.6f}")
+    print(f"    Reconstruction RMSE: {recon_rmse:.6f}")
+    print(f"    N_subdomains: {n_sd}")
+    print(f"    N_points: {N}")
+    print(f"  ===============================================")
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ class GridValidator:
         self.norm = norm
         self.criterion = loss_fun
         self.font_size = font_size
-        self.headers = ("invar", "truth", "prediction", "relative error")
+        self.headers = ("permeability", "pressure", "prediction", "relative error")
 
     def compare(
         self,
