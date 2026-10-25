@@ -1,3 +1,41 @@
+# PhysicsNeMo + NUNO (Bachelor's Thesis Fork)
+
+This is a fork of [NVIDIA PhysicsNeMo](https://github.com/NVIDIA/physicsnemo), made for
+my bachelor's thesis. It adds the **Non-Uniform Neural Operator (NUNO)**
+([Liu et al., ICML 2023](https://arxiv.org/abs/2305.18694)) to PhysicsNeMo and applies it to
+2D Darcy flow on non-uniform point clouds.
+
+NUNO uses a KD-tree to split a non-uniform point cloud into subdomains. It interpolates
+each subdomain onto a uniform grid, runs an FNO on the grids, and interpolates the
+result back to the original points.
+
+### What this fork adds
+
+- [`physicsnemo/models/fno/nuno.py`](physicsnemo/models/fno/nuno.py): the NUNO model,
+  with its KD-tree domain decomposition in
+  [`tree.py`](physicsnemo/models/fno/tree.py) and [`node.py`](physicsnemo/models/fno/node.py)
+- [`examples/cfd/darcy_nuno/`](examples/cfd/darcy_nuno/): a full Darcy flow
+  example with NUNO
+  - `generate_darcy_grids.py`: generates the Darcy dataset (HDF5 shards)
+  - `point_sampler.py`: samplers for non-uniform point clouds (random, locally dense)
+  - `train.py`: training and validation loop with visualizations
+- [`test/models/test_nuno.py`](test/models/test_nuno.py): unit tests
+
+### Quick start
+
+```bash
+pip install -e .
+cd examples/cfd/darcy_nuno
+python generate_darcy_grids.py --output data/darcy_master_normalized
+python train.py --data-dir data/darcy_master_normalized/train
+```
+
+Hyperparameters are constants at the top of `train.py`.
+
+The original PhysicsNeMo README follows below.
+
+---
+
 # NVIDIA PhysicsNeMo
 
 <!-- markdownlint-disable -->
